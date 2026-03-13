@@ -1,0 +1,175 @@
+name: Generate Release Notes
+
+on:
+  workflow_dispatch:
+    inputs:
+      since-ref:
+        description: 'Git ref to diff from (default: last tag)'
+        required: false
+        type: string
+        default: ''
+      max-files-per-pr:
+        description: 'Max changed files to include per PR prompt'
+        required: false
+        type: number
+        default: 20
+      max-body-chars:
+        description: 'Max PR body characters to include'
+        required: false
+        type: number
+        default: 1000
+      max-patch-chars:
+        description: 'Max total diff characters per PR prompt'
+        required: false
+        type: number
+        default: 100000
+      rate-limit-delay:
+        description: 'Seconds to sleep between API calls (0 to disable)'
+        required: false
+        type: number
+        default: 1
+      model:
+        description: 'GitHub Models API model name'
+        required: false
+        type: string
+        default: 'openai/gpt-4o'
+
+jobs:
+  generate-notes:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Build per-PR prompts
+        env:
+          GH_TOKEN: ${{ secrets.MODELS_API_TOKEN }}
+        run: |
+          bash scripts/build-release-notes-prompt.sh \
+            --owner "${{ github.repository_owner }}" \
+            --repo "${{ github.event.repository.name }}" \
+            --default-branch "main" \
+            --since-ref "${{ inputs.since-ref }}" \
+            --max-files-per-pr "${{ inputs.max-files-per-pr }}" \
+            --max-body-chars "${{ inputs.max-body-chars }}" \
+            --max-patch-chars "${{ inputs.max-patch-chars }}" \
+            --output-dir /tmp/release-notes
+
+      - name: Generate per-PR notes via GitHub Models
+        env:
+          MODELS_API_TOKEN: ${{ secrets.MODELS_API_TOKEN }}
+          MODEL: ${{ inputs.model }}
+          RATE_LIMIT_DELAY: ${{ inputs.rate-limit-delay }}
+        run: |
+          PROMPT_DIR="/tmp/release-notes"
+          NOTES_DIR="/tmp/release-notes/notes"
+          mkdir -p "$NOTES_DIR"
+
+          for PROMPT_FILE in "$PROMPT_DIR"/pr-*-prompt.txt; do
+            [ -f "$PROMPT_FILE" ] || continue
+
+            PR_NUM=$(basename "$PROMPT_FILE" | grep -oE '[0-9]+')
+            echo "Generating note for PR #${PR_NUM}..."
+
+            PROMPT_CONTENT=$(cat "$PROMPT_FILE")
+
+            PAYLOAD=$(jq -n \
+              --arg model "$MODEL" \
+              --arg content "$PROMPT_CONTENT" \
+              '{
+                model: $model,
+                messages: [
+                  { role: "system", content: "You are a concise release notes writer. Follow the output format exactly." },
+                  { role: "user", content: $content }
+                ],
+                temperature: 0.3,
+                max_tokens: 256
+              }')
+
+            RESPONSE=$(curl -s \
+              -H "Authorization: Bearer ${MODELS_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "$PAYLOAD" \
+              "https://models.github.ai/inference/chat/completions")
+
+            NOTE=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // "OMIT"')
+
+            echo "$NOTE" > "${NOTES_DIR}/pr-${PR_NUM}.md"
+            echo "  Result: $(head -1 "${NOTES_DIR}/pr-${PR_NUM}.md")"
+
+            if [[ "${RATE_LIMIT_DELAY}" -gt 0 ]]; then
+              sleep "${RATE_LIMIT_DELAY}"
+            fi
+          done
+
+      - name: Combine notes into release draft
+        env:
+          MODELS_API_TOKEN: ${{ secrets.MODELS_API_TOKEN }}
+          MODEL: ${{ inputs.model }}
+        run: |
+          NOTES_DIR="/tmp/release-notes/notes"
+          COMBINE_PROMPT="/tmp/release-notes/combine-prompt.txt"
+
+          for NOTE_FILE in "$NOTES_DIR"/pr-*.md; do
+            [ -f "$NOTE_FILE" ] || continue
+            echo "" >> "$COMBINE_PROMPT"
+            cat "$NOTE_FILE" >> "$COMBINE_PROMPT"
+          done
+
+          COMBINE_CONTENT=$(cat "$COMBINE_PROMPT")
+
+          PAYLOAD=$(jq -n \
+            --arg model "$MODEL" \
+            --arg content "$COMBINE_CONTENT" \
+            '{
+              model: $model,
+              messages: [
+                { role: "system", content: "You are a release notes formatter. Follow the grouping rules exactly. Do not add commentary." },
+                { role: "user", content: $content }
+              ],
+              temperature: 0.1,
+              max_tokens: 2048
+            }')
+
+          RESPONSE=$(curl -s \
+            -H "Authorization: Bearer ${MODELS_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            "https://models.github.ai/inference/chat/completions")
+
+          FINAL_NOTES=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // "No notes generated"')
+
+          echo "$FINAL_NOTES" > /tmp/release-notes/final-notes.md
+          echo "--- Final Release Notes ---"
+          cat /tmp/release-notes/final-notes.md
+
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ secrets.MODELS_API_TOKEN }}
+        run: |
+          TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          NEXT_DATE=$(date +%Y.%m.%d)
+
+          EXISTING_DRAFT=$(gh release list --exclude-drafts=false --json tagName,isDraft \
+            --jq '.[] | select(.isDraft) | .tagName' | head -1 || true)
+
+          if [[ -n "$EXISTING_DRAFT" ]]; then
+            echo "Updating existing draft: ${EXISTING_DRAFT}"
+            gh release edit "$EXISTING_DRAFT" \
+              --notes-file /tmp/release-notes/final-notes.md
+          else
+            DRAFT_TAG="draft-${NEXT_DATE}"
+            echo "Creating new draft release: ${DRAFT_TAG}"
+            gh release create "$DRAFT_TAG" \
+              --draft \
+              --title "Release ${NEXT_DATE}" \
+              --notes-file /tmp/release-notes/final-notes.md \
+              --target main
+          fi
