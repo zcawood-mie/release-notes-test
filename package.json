@@ -1,0 +1,10 @@
+{
+  "name": "release-notes-test",
+  "version": "0.1.0",
+  "description": "Test repo for AI-powered release notes generation workflow",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "license": "MIT"
+}
