@@ -50,7 +50,7 @@ jobs:
 
       - name: Build per-PR prompts
         env:
-          GH_TOKEN: ${{ secrets.MODELS_API_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           bash scripts/build-release-notes-prompt.sh \
             --owner "${{ github.repository_owner }}" \
@@ -152,7 +152,7 @@ jobs:
 
       - name: Create or update draft release
         env:
-          GH_TOKEN: ${{ secrets.MODELS_API_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           NEXT_DATE=$(date +%Y.%m.%d)
