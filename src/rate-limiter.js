@@ -1,5 +1,9 @@
 class RateLimiter {
-  constructor({ windowMs = 60000, max = 60, cleanupIntervalMs = 600000 } = {}) {
+  constructor({
+    windowMs = 60000,
+    max = 60,
+    cleanupIntervalMs = 600000,
+  } = {}) {
     this.windowMs = windowMs;
     this.max = max;
     this.hits = new Map();

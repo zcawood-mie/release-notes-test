@@ -3,9 +3,9 @@
  * Validates tokens and extracts user context.
  */
 
-const crypto = require('crypto');
+const crypto = require("crypto");
 
-const SECRET = process.env.AUTH_SECRET || 'dev-secret';
+const SECRET = process.env.AUTH_SECRET || "dev-secret";
 const TOKEN_EXPIRY_MS = 3600 * 1000; // 1 hour
 
 function generateToken(userId, role) {
@@ -25,7 +25,7 @@ function generateToken(userId, role) {
 function validateToken(token) {
   const [payloadB64, signature] = token.split('.');
   if (!payloadB64 || !signature) {
-    return { valid: false, error: 'Malformed token' };
+    return { valid: false, error: "Malformed token" };
   }
 
   const payload = Buffer.from(payloadB64, 'base64').toString();
@@ -35,12 +35,12 @@ function validateToken(token) {
     .digest('hex');
 
   if (signature !== expectedSig) {
-    return { valid: false, error: 'Invalid signature' };
+    return { valid: false, error: "Invalid signature" };
   }
 
   const data = JSON.parse(payload);
   if (data.exp < Date.now()) {
-    return { valid: false, error: 'Token expired' };
+    return { valid: false, error: "Token expired" };
   }
 
   return { valid: true, userId: data.userId, role: data.role };
