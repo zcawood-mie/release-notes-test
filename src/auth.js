@@ -39,7 +39,7 @@ function validateToken(token) {
   }
 
   const data = JSON.parse(payload);
-  if (data.exp < Date.now()) {
+  if (data.exp <= Date.now()) {
     return { valid: false, error: "Token expired" };
   }
 
