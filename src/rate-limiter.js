@@ -1,69 +1,60 @@
-/**
- * In-memory sliding-window rate limiter.
- * Tracks request counts per key within a configurable time window.
- */
-
 class RateLimiter {
-  constructor(maxRequests = 100, windowMs = 60000) {
-    this.maxRequests = maxRequests;
+  constructor({ windowMs = 60000, max = 60, cleanupIntervalMs = 600000 } = {}) {
     this.windowMs = windowMs;
-    this.store = new Map();
+    this.max = max;
+    this.hits = new Map();
+    this.cleanupIntervalMs = cleanupIntervalMs;
+    this._interval = null;
+    if (this.cleanupIntervalMs > 0) {
+      this._interval = setInterval(() => this.cleanup(), this.cleanupIntervalMs);
+    }
   }
 
-  /**
-   * Check if a request is allowed for the given key.
-   * @param {string} key - Identifier (e.g., IP address)
-   * @returns {{ allowed: boolean, remaining: number, resetMs: number }}
-   */
-  check(key) {
-    const now = Date.now();
+  _now() {
+    return Date.now();
+  }
+
+  isAllowed(key) {
+    const now = this._now();
     const windowStart = now - this.windowMs;
-
-    if (!this.store.has(key)) {
-      this.store.set(key, []);
+    let arr = this.hits.get(key);
+    if (!arr) {
+      arr = [];
+      this.hits.set(key, arr);
     }
-
-    const timestamps = this.store.get(key).filter((t) => t > windowStart);
-    this.store.set(key, timestamps);
-
-    if (timestamps.length >= this.maxRequests) {
-      const oldestInWindow = timestamps[0];
-      return {
-        allowed: false,
-        remaining: 0,
-        resetMs: oldestInWindow + this.windowMs - now,
-      };
+    // remove timestamps outside the window
+    while (arr.length && arr[0] <= windowStart) {
+      arr.shift();
     }
-
-    timestamps.push(now);
-    return {
-      allowed: true,
-      remaining: this.maxRequests - timestamps.length,
-      resetMs: this.windowMs,
-    };
+    if (arr.length < this.max) {
+      arr.push(now);
+      return true;
+    }
+    return false;
   }
 
-  /**
-   * Clear all entries (useful for testing).
-   */
-  reset() {
-    this.store.clear();
-  }
-
-  /**
-   * Remove expired entries to prevent memory leaks.
-   */
+  // Manual cleanup to remove stale keys and reduce memory usage
   cleanup() {
-    const cutoff = Date.now() - this.windowMs;
-    for (const [key, timestamps] of this.store.entries()) {
-      const valid = timestamps.filter((t) => t > cutoff);
-      if (valid.length === 0) {
-        this.store.delete(key);
-      } else {
-        this.store.set(key, valid);
+    const now = this._now();
+    const windowStart = now - this.windowMs;
+    for (const [key, arr] of this.hits.entries()) {
+      // drop old timestamps
+      while (arr.length && arr[0] <= windowStart) {
+        arr.shift();
       }
+      if (arr.length === 0) {
+        this.hits.delete(key);
+      }
+    }
+  }
+
+  // Stop any background cleanup interval
+  stop() {
+    if (this._interval) {
+      clearInterval(this._interval);
+      this._interval = null;
     }
   }
 }
 
-module.exports = { RateLimiter };
+module.exports = RateLimiter;
