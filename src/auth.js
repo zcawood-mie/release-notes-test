@@ -9,6 +9,13 @@ const SECRET = process.env.AUTH_SECRET || "dev-secret";
 const TOKEN_EXPIRY_MS = 3600 * 1000; // 1 hour
 
 function generateToken(userId, role) {
+  if (!userId || typeof userId !== 'string') {
+    throw new Error('generateToken: userId must be a non-empty string');
+  }
+  if (!role || typeof role !== 'string') {
+    throw new Error('generateToken: role must be a non-empty string');
+  }
+
   const payload = JSON.stringify({
     userId,
     role,
@@ -23,6 +30,10 @@ function generateToken(userId, role) {
 }
 
 function validateToken(token) {
+  if (!token || typeof token !== 'string') {
+    return { valid: false, error: "Token must be a non-empty string" };
+  }
+
   const [payloadB64, signature] = token.split('.');
   if (!payloadB64 || !signature) {
     return { valid: false, error: "Malformed token" };
