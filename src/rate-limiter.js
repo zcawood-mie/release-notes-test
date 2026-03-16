@@ -11,6 +11,7 @@ class RateLimiter {
     this._interval = null;
     if (this.cleanupIntervalMs > 0) {
       this._interval = setInterval(() => this.cleanup(), this.cleanupIntervalMs);
+      this._interval.unref(); // Don't prevent Node.js from exiting
     }
   }
 
@@ -52,12 +53,13 @@ class RateLimiter {
     }
   }
 
-  // Stop any background cleanup interval
+  // Stop any background cleanup interval and clear all tracked data
   stop() {
     if (this._interval) {
       clearInterval(this._interval);
       this._interval = null;
     }
+    this.hits.clear();
   }
 }
 
