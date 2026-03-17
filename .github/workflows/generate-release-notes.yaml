@@ -154,9 +154,28 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          NEXT_DATE=$(date +%Y.%m.%d)
+          YEAR=$(date +%Y)
+          WEEK=$(date +%V | sed 's/^0//')  # ISO week number, strip leading zero
 
+          # Check for existing releases this week to determine patch number
+          EXISTING_TAGS=$(gh release list --json tagName --jq '.[].tagName' 2>/dev/null || true)
+          BASE_TAG="${YEAR}.${WEEK}"
+          PATCH=0
+
+          if echo "$EXISTING_TAGS" | grep -qx "${BASE_TAG}"; then
+            PATCH=1
+          fi
+          while echo "$EXISTING_TAGS" | grep -qx "${BASE_TAG}.${PATCH}" 2>/dev/null; do
+            PATCH=$((PATCH + 1))
+          done
+
+          if [[ "$PATCH" -eq 0 ]]; then
+            NEXT_TAG="${BASE_TAG}"
+          else
+            NEXT_TAG="${BASE_TAG}.${PATCH}"
+          fi
+
+          # Try to find an existing draft release to update
           EXISTING_DRAFT=$(gh release list --exclude-drafts=false --json tagName,isDraft \
             --jq '.[] | select(.isDraft) | .tagName' | head -1 || true)
 
@@ -165,11 +184,10 @@ jobs:
             gh release edit "$EXISTING_DRAFT" \
               --notes-file /tmp/release-notes/final-notes.md
           else
-            DRAFT_TAG="draft-${NEXT_DATE}"
-            echo "Creating new draft release: ${DRAFT_TAG}"
-            gh release create "$DRAFT_TAG" \
+            echo "Creating new draft release: ${NEXT_TAG}"
+            gh release create "$NEXT_TAG" \
               --draft \
-              --title "Release ${NEXT_DATE}" \
+              --title "Release ${NEXT_TAG}" \
               --notes-file /tmp/release-notes/final-notes.md \
               --target main
           fi
