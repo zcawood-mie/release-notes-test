@@ -187,7 +187,7 @@ jobs:
             echo "Creating new draft release: ${NEXT_TAG}"
             gh release create "$NEXT_TAG" \
               --draft \
-              --title "Release ${NEXT_TAG}" \
+              --title "${NEXT_TAG}" \
               --notes-file /tmp/release-notes/final-notes.md \
               --target main
           fi
