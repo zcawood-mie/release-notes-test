@@ -51,15 +51,21 @@ jobs:
       - name: Build per-PR prompts
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          SINCE_REF: ${{ inputs.since-ref }}
+          MAX_FILES_PER_PR: ${{ inputs.max-files-per-pr }}
+          MAX_BODY_CHARS: ${{ inputs.max-body-chars }}
+          MAX_PATCH_CHARS: ${{ inputs.max-patch-chars }}
         run: |
           bash scripts/build-release-notes-prompt.sh \
-            --owner "${{ github.repository_owner }}" \
-            --repo "${{ github.event.repository.name }}" \
+            --owner "$REPO_OWNER" \
+            --repo "$REPO_NAME" \
             --default-branch "main" \
-            --since-ref "${{ inputs.since-ref }}" \
-            --max-files-per-pr "${{ inputs.max-files-per-pr }}" \
-            --max-body-chars "${{ inputs.max-body-chars }}" \
-            --max-patch-chars "${{ inputs.max-patch-chars }}" \
+            --since-ref "$SINCE_REF" \
+            --max-files-per-pr "$MAX_FILES_PER_PR" \
+            --max-body-chars "$MAX_BODY_CHARS" \
+            --max-patch-chars "$MAX_PATCH_CHARS" \
             --output-dir /tmp/release-notes
 
       - name: Generate per-PR notes via GitHub Models
