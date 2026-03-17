@@ -1,0 +1,26 @@
+# Temporary test wrapper — calls the shared reusable workflow from feature branch.
+# Delete this file after validation.
+
+name: Test Shared Workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      since-ref:
+        description: 'Git ref to diff from (default: last tag)'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  release-notes:
+    uses: bluehive-health/BluehiveMeteorSharedGithubActions/.github/workflows/generate-release-notes.yaml@feature/release-notes
+    with:
+      default-branch: main
+      since-ref: ${{ inputs.since-ref }}
+    secrets:
+      MODELS_API_TOKEN: ${{ secrets.MODELS_API_TOKEN }}
